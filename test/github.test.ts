@@ -13,6 +13,9 @@ import { MockLlm, systemOf, type RecordedRequest } from './helpers/mock-llm.js';
 import { git, makeRepo } from './helpers/repo.js';
 
 Object.assign(process.env, { GIT_AUTHOR_NAME: 'factory-test', GIT_AUTHOR_EMAIL: 'f@t', GIT_COMMITTER_NAME: 'factory-test', GIT_COMMITTER_EMAIL: 'f@t' });
+// When this suite itself runs in GitHub Actions, the runner's variables would make the factory
+// trust github-actions[bot] instead of the fake gh user. Tests that need them set them.
+for (const k of ['GITHUB_ACTIONS', 'GITHUB_OUTPUT', 'UFACTORY_BOT_LOGIN', 'UFACTORY_HANDOFF_KEY', 'UFACTORY_PROFILE']) delete process.env[k];
 
 const mock = new MockLlm(() => ({ content: '{}' }));
 before(async () => void (await mock.start()));
