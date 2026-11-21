@@ -69,7 +69,7 @@ export function makeRepo(o: RepoOptions = {}): string {
   initCommand({ target: dir, dryRun: false, withWorkflows: false, harness: ['claude', 'codex'] }, () => undefined);
   writeFileSync(join(dir, 'docs/factory/CHARTER.md'), READY_CHARTER(o));
   writeFileSync(join(dir, '.factory/gates.conf'), 'REQUIRED_FAST=""\nREQUIRED_FULL="test"\nREQUIRED_DEEP="test"\n');
-  writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'demo', version: '1.0.0', type: 'module', scripts: { test: 'node --test test/' } }, null, 2));
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'demo', version: '1.0.0', type: 'module', scripts: { test: 'node --test' } }, null, 2));
   mkdirSync(join(dir, 'src'), { recursive: true });
   mkdirSync(join(dir, 'test'), { recursive: true });
   writeFileSync(join(dir, 'src/math.js'), 'export function add(a, b) {\n  return a - b;\n}\n');
@@ -92,7 +92,7 @@ models:
 github:
   enabled: false
 agent:
-  test_command: "node --test test/"
+  test_command: "node --test"
   max_refusals: 3
 budget:
   max_turns: 20
