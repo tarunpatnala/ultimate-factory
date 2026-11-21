@@ -1,0 +1,119 @@
+# ultimate-factory: optional third-party scanners on every pull request (factory PRs included).
+# Each job is off until you set its repository variable to "true". Make the jobs you enable
+# required status checks in the branch ruleset, next to factory-policy, so a factory PR cannot be
+# merged while a scanner is red. These jobs hold only their own scanner token and read access;
+# the factory's LLM keys and GitHub write token are never present here.
+#
+#   SonarQube / SonarCloud   variables: UFACTORY_SONAR=true, SONAR_HOST_URL (https://sonarcloud.io
+#                            or your server)   secret: SONAR_TOKEN
+#                            Project settings live in sonar-project.properties. For C#/.NET,
+#                            set UFACTORY_SONAR_DOTNET=true and SONAR_PROJECT_KEY: the job then
+#                            runs dotnet-sonarscanner begin / dotnet build / end instead.
+#   Snyk                     variables: UFACTORY_SNYK=true, SNYK_CLI_VERSION (exact, e.g. from
+#                            npm view snyk version)   secret: SNYK_TOKEN
+#                            Runs open-source (snyk test) and code (snyk code test) scans.
+#   Wiz                      variables: UFACTORY_WIZ=true, WIZCLI_URL (a versioned download URL
+#                            from your Wiz tenant docs), optional WIZ_SCAN_ARGS (default
+#                            "dir scan --path .")   secrets: WIZ_CLIENT_ID, WIZ_CLIENT_SECRET
+#
+# Fork PRs never receive secrets, so these jobs skip them.
+name: factory-scanners
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions: {}
+
+concurrency:
+  group: factory-scanners-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  sonar:
+    if: vars.UFACTORY_SONAR == 'true' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0, persist-credentials: false }
+      - name: Set up .NET
+        if: vars.UFACTORY_SONAR_DOTNET == 'true'
+        uses: actions/setup-dotnet@v4
+        with: { dotnet-version: "8.0.x" }
+      - name: SonarScanner for .NET
+        if: vars.UFACTORY_SONAR_DOTNET == 'true'
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
+          SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
+        run: |
+          dotnet tool install --global dotnet-sonarscanner
+          dotnet sonarscanner begin /k:"$SONAR_PROJECT_KEY" /d:sonar.host.url="$SONAR_HOST_URL" /d:sonar.token="$SONAR_TOKEN" /d:sonar.qualitygate.wait=true
+          dotnet build --nologo
+          dotnet sonarscanner end /d:sonar.token="$SONAR_TOKEN"
+      - name: SonarQube scan
+        if: vars.UFACTORY_SONAR_DOTNET != 'true'
+        uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
+        with:
+          args: -Dsonar.qualitygate.wait=true
+
+  snyk:
+    if: vars.UFACTORY_SNYK == 'true' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Set up .NET (for .NET repositories)
+        if: hashFiles('**/*.sln', '**/*.slnx', '**/*.csproj', '**/*.fsproj') != ''
+        uses: actions/setup-dotnet@v4
+        with: { dotnet-version: "8.0.x" }
+      - name: Restore dependencies so Snyk sees the resolved graph
+        run: |
+          if [ -f package-lock.json ]; then npm ci --ignore-scripts; fi
+          if command -v dotnet >/dev/null && { compgen -G '*.sln' || compgen -G '*.slnx' || compgen -G '*.csproj'; } >/dev/null; then dotnet restore; fi
+      - name: Snyk open source and code scans
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+          SNYK_CLI_VERSION: ${{ vars.SNYK_CLI_VERSION }}
+        run: |
+          if ! printf '%s' "$SNYK_CLI_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Set the repository variable SNYK_CLI_VERSION to an exact version"; exit 2
+          fi
+          npm install --global --no-audit --no-fund "snyk@$SNYK_CLI_VERSION"
+          snyk test --all-projects --severity-threshold=high
+          snyk code test --severity-threshold=high
+
+  wiz:
+    if: vars.UFACTORY_WIZ == 'true' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - name: Wiz CLI scan (IaC, secrets, vulnerabilities)
+        env:
+          WIZ_CLIENT_ID: ${{ secrets.WIZ_CLIENT_ID }}
+          WIZ_CLIENT_SECRET: ${{ secrets.WIZ_CLIENT_SECRET }}
+          WIZCLI_URL: ${{ vars.WIZCLI_URL }}
+          WIZ_SCAN_ARGS: ${{ vars.WIZ_SCAN_ARGS }}
+        run: |
+          if [ -z "$WIZCLI_URL" ]; then echo "::error::Set the repository variable WIZCLI_URL"; exit 2; fi
+          curl -fsSL -o "$RUNNER_TEMP/wizcli" "$WIZCLI_URL"
+          chmod +x "$RUNNER_TEMP/wizcli"
+          "$RUNNER_TEMP/wizcli" auth --id "$WIZ_CLIENT_ID" --secret "$WIZ_CLIENT_SECRET"
+          # shellcheck disable=SC2086
+          "$RUNNER_TEMP/wizcli" ${WIZ_SCAN_ARGS:-dir scan --path .}

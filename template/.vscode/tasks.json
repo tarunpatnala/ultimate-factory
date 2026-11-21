@@ -1,0 +1,23 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    { "label": "factory: doctor (ping models)", "type": "shell", "command": "ufactory doctor --ping", "problemMatcher": [] },
+    { "label": "factory: models", "type": "shell", "command": "ufactory models", "problemMatcher": [] },
+    { "label": "factory: status", "type": "shell", "command": "ufactory status", "problemMatcher": [] },
+    { "label": "factory: gates full", "type": "shell", "command": "ufactory gates full", "problemMatcher": [] },
+    { "label": "factory: policy-check vs main", "type": "shell", "command": "ufactory policy-check --base origin/HEAD", "problemMatcher": [] },
+    { "label": "factory: triage (dry run)", "type": "shell", "command": "ufactory triage", "problemMatcher": [] },
+    {
+      "label": "factory: implement locally",
+      "type": "shell",
+      "command": "ufactory implement --local --task \"${input:task}\" --done-when \"${input:doneWhen}\" --files \"${input:files}\"",
+      "problemMatcher": []
+    },
+    { "label": "factory: 10-persona review of my changes", "type": "shell", "command": "ufactory review --diff origin/HEAD --out review.md", "problemMatcher": [] }
+  ],
+  "inputs": [
+    { "id": "task", "type": "promptString", "description": "What should change?" },
+    { "id": "doneWhen", "type": "promptString", "description": "Checkable done condition (e.g. test/x.test.js passes)" },
+    { "id": "files", "type": "promptString", "description": "Expected files, comma separated" }
+  ]
+}

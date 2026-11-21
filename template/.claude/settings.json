@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(./.factory/scripts/gates.sh:*)",
+      "Bash(./.claude/scripts/gates.sh:*)",
+      "Bash(ufactory policy-check:*)",
+      "Bash(npx ultimate-factory policy-check:*)",
+      "Bash(ufactory status:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git branch:*)",
+      "Bash(git merge-base:*)"
+    ],
+    "deny": [
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(gh pr merge:*)",
+      "Bash(git merge:*)",
+      "Edit(docs/factory/CHARTER.md)",
+      "Edit(.factory/gates.conf)",
+      "Edit(AGENTS.md)",
+      "Edit(.factory/scripts/gates.sh)",
+      "Edit(.claude/settings.json)",
+      "Edit(.codex/hooks.json)",
+      "Edit(factory.config.yaml)",
+      "Edit(.factory/scripts/**)",
+      "Edit(docs/factory/CONTRACT.md)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$(git rev-parse --show-toplevel)/.claude/hooks/block-merge.sh\""
+          }
+        ]
+      }
+    ]
+  }
+}

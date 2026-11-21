@@ -1,0 +1,348 @@
+# ultimate-factory: unattended stages on GitHub Actions with OpenAI or Portkey.
+#
+# Repository VARIABLES (Settings -> Secrets and variables -> Actions -> Variables):
+#   UFACTORY_PACKAGE   REQUIRED. Where to install ultimate-factory from, pinned. Examples:
+#                        ultimate-factory@1.0.1
+#                        github:tarunpatnala/ultimate-factory#v1.0.1
+#   UFACTORY_PROFILE   optional: "openai" or "portkey" (profile in factory.config.yaml)
+#   UFACTORY_BOT_LOGIN optional: login that posts factory comments when FACTORY_GH_TOKEN is an
+#                      App/PAT (default github-actions[bot])
+# Repository SECRETS: the env names your factory.config.yaml references, e.g.
+#   OPENAI_API_KEY, PORTKEY_API_KEY
+#   UFACTORY_HANDOFF_KEY  recommended: random string (openssl rand -hex 32). Triage signs each
+#                      handoff with it and implement/verify reject unsigned or altered ones, so
+#                      another workflow posting as github-actions[bot] cannot queue work.
+#   FACTORY_GH_TOKEN   optional GitHub App token or fine-grained PAT (contents/issues/PRs write,
+#                      NO admin/bypass). PRs opened with the default GITHUB_TOKEN do not trigger
+#                      other workflows; verification of new factory PRs then runs in the
+#                      separate verify-new-pr job.
+#
+# Safety: never uses pull_request_target; fork PRs never see secrets; issue events only from
+# OWNER/MEMBER/COLLABORATOR; least-privilege permissions; checkout does not persist credentials,
+# so repository code executed by gates cannot read the push token. For OS-level isolation set
+# agent.sandbox.mode: docker in factory.config.yaml (Docker is preinstalled on ubuntu-latest).
+# Run records are kept on the factory-records branch (records job below), so metrics and the
+# daily spend cap see history beyond artifact retention. Remove --apply to dry-run.
+name: factory
+
+on:
+  issues:
+    types: [opened, reopened, labeled]
+  pull_request:
+    types: [opened, synchronize, ready_for_review]
+  schedule:
+    - cron: "17 * * * *"   # hourly: triage sweep + one implementation item
+    - cron: "41 6 * * 1"   # weekly: monitor
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: "Stage to run"
+        type: choice
+        options: [triage, implement, monitor, status]
+        default: status
+      issue:
+        description: "Issue number (optional)"
+        required: false
+
+permissions: {}
+
+env:
+  UFACTORY_PROFILE: ${{ vars.UFACTORY_PROFILE }}
+  UFACTORY_PACKAGE: ${{ vars.UFACTORY_PACKAGE }}
+  UFACTORY_BOT_LOGIN: ${{ vars.UFACTORY_BOT_LOGIN }}
+  NO_COLOR: "1"
+  # Refuse unpinned installs: exact semver (pkg@1.2.3) or a git URL with #tag/#sha.
+  PIN_CHECK: |
+    case "$UFACTORY_PACKAGE" in
+      "") echo "::error::Set the repository variable UFACTORY_PACKAGE (e.g. ultimate-factory@1.0.1)"; exit 2 ;;
+    esac
+    if ! printf '%s' "$UFACTORY_PACKAGE" | grep -Eq '(@[0-9]+\.[0-9]+\.[0-9]+$)|(#v?[0-9]+\.[0-9]+\.[0-9]+$)|(#[0-9a-f]{40}$)'; then
+      echo "::error::UFACTORY_PACKAGE must be pinned to an exact version, tag or commit (got: $UFACTORY_PACKAGE)"; exit 2
+    fi
+
+jobs:
+  triage:
+    if: >-
+      (github.event_name == 'issues' &&
+       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association) &&
+       !startsWith(github.event.label.name || '', 'factory:')) ||
+      (github.event_name == 'schedule' && github.event.schedule == '17 * * * *') ||
+      (github.event_name == 'workflow_dispatch' && inputs.stage == 'triage')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      issues: write
+    concurrency:
+      group: factory-triage-${{ github.event.issue.number || 'sweep' }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Install ultimate-factory
+        run: |
+          bash -c "$PIN_CHECK"
+          npm install --global --no-audit --no-fund "$UFACTORY_PACKAGE"
+      - name: Triage
+        env:
+          GH_TOKEN: ${{ secrets.FACTORY_GH_TOKEN || github.token }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          PORTKEY_API_KEY: ${{ secrets.PORTKEY_API_KEY }}
+          UFACTORY_HANDOFF_KEY: ${{ secrets.UFACTORY_HANDOFF_KEY }}
+          ISSUE: ${{ github.event.issue.number || inputs.issue }}
+        run: ufactory triage --apply ${ISSUE:+--issue "$ISSUE"}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: "factory-runs-triage-${{ github.run_id }}", path: docs/factory/runs/, if-no-files-found: ignore }
+
+  implement:
+    needs: [triage]
+    if: >-
+      always() &&
+      ((github.event_name == 'schedule' && github.event.schedule == '17 * * * *') ||
+       (github.event_name == 'workflow_dispatch' && inputs.stage == 'implement'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write        # push the claim branch only; protect the default branch with a ruleset
+      issues: write
+      pull-requests: write
+    concurrency:
+      group: factory-implement
+      cancel-in-progress: false
+    outputs:
+      pr_number: ${{ steps.implement.outputs.pr_number }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0, persist-credentials: false }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Install ultimate-factory
+        run: |
+          bash -c "$PIN_CHECK"
+          npm install --global --no-audit --no-fund "$UFACTORY_PACKAGE"
+      - name: Set up .NET (only for repositories with a global.json)
+        if: hashFiles('global.json') != ''
+        uses: actions/setup-dotnet@v4
+        with: { global-json-file: global.json }
+      - name: Set up .NET (latest LTS when there is no global.json)
+        if: hashFiles('global.json') == '' && hashFiles('**/*.sln', '**/*.slnx', '**/*.csproj', '**/*.fsproj') != ''
+        uses: actions/setup-dotnet@v4
+        with: { dotnet-version: "8.0.x" }
+      - name: Install project dependencies
+        run: |
+          if [ -f package-lock.json ]; then npm ci; elif [ -f package.json ]; then npm install; fi
+          if command -v dotnet >/dev/null && { compgen -G '*.sln' || compgen -G '*.slnx' || compgen -G '*.csproj' || compgen -G '*.fsproj'; } >/dev/null; then dotnet restore; fi
+      - name: Configure git identity and credentials (credential helper reads GH_TOKEN, which gates never see)
+        env:
+          GH_TOKEN: ${{ secrets.FACTORY_GH_TOKEN || github.token }}
+        run: |
+          git config user.name "factory-bot"
+          git config user.email "factory-bot@users.noreply.github.com"
+          gh auth setup-git
+      - name: Load earlier run records (daily caps and metrics)
+        run: ufactory records pull --days 2
+      - name: Implement one item
+        id: implement
+        env:
+          GH_TOKEN: ${{ secrets.FACTORY_GH_TOKEN || github.token }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          PORTKEY_API_KEY: ${{ secrets.PORTKEY_API_KEY }}
+          UFACTORY_HANDOFF_KEY: ${{ secrets.UFACTORY_HANDOFF_KEY }}
+          ISSUE: ${{ inputs.issue }}
+        run: ufactory implement --apply ${ISSUE:+--issue "$ISSUE"}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: "factory-runs-implement-${{ github.run_id }}", path: docs/factory/runs/, if-no-files-found: ignore }
+
+  # PRs opened with the default GITHUB_TOKEN do not trigger pull_request workflows, so the new PR
+  # is verified here, in a fresh job on a fresh runner (nothing from the implement job's
+  # workspace or $HOME carries over). Shares the verify concurrency group, so a second verify
+  # triggered by an App/PAT token is serialized, not raced.
+  verify-new-pr:
+    needs: [implement]
+    if: always() && needs.implement.outputs.pr_number != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    concurrency:
+      group: factory-verify-${{ needs.implement.outputs.pr_number }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0, persist-credentials: false }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Install ultimate-factory
+        run: |
+          bash -c "$PIN_CHECK"
+          npm install --global --no-audit --no-fund "$UFACTORY_PACKAGE"
+      - name: Set up .NET (only for repositories with a global.json)
+        if: hashFiles('global.json') != ''
+        uses: actions/setup-dotnet@v4
+        with: { global-json-file: global.json }
+      - name: Set up .NET (latest LTS when there is no global.json)
+        if: hashFiles('global.json') == '' && hashFiles('**/*.sln', '**/*.slnx', '**/*.csproj', '**/*.fsproj') != ''
+        uses: actions/setup-dotnet@v4
+        with: { dotnet-version: "8.0.x" }
+      - name: Install project dependencies
+        run: |
+          if [ -f package-lock.json ]; then npm ci; elif [ -f package.json ]; then npm install; fi
+          if command -v dotnet >/dev/null && { compgen -G '*.sln' || compgen -G '*.slnx' || compgen -G '*.csproj' || compgen -G '*.fsproj'; } >/dev/null; then dotnet restore; fi
+      - name: Verify PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          PORTKEY_API_KEY: ${{ secrets.PORTKEY_API_KEY }}
+          UFACTORY_HANDOFF_KEY: ${{ secrets.UFACTORY_HANDOFF_KEY }}
+          PR: ${{ needs.implement.outputs.pr_number }}
+        run: ufactory verify --pr "$PR" --apply
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: "factory-runs-verify-new-${{ github.run_id }}", path: docs/factory/runs/, if-no-files-found: ignore }
+
+  verify:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.event.pull_request.head.ref, 'factory/fq-')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    concurrency:
+      group: factory-verify-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0, persist-credentials: false }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Install ultimate-factory
+        run: |
+          bash -c "$PIN_CHECK"
+          npm install --global --no-audit --no-fund "$UFACTORY_PACKAGE"
+      - name: Set up .NET (only for repositories with a global.json)
+        if: hashFiles('global.json') != ''
+        uses: actions/setup-dotnet@v4
+        with: { global-json-file: global.json }
+      - name: Set up .NET (latest LTS when there is no global.json)
+        if: hashFiles('global.json') == '' && hashFiles('**/*.sln', '**/*.slnx', '**/*.csproj', '**/*.fsproj') != ''
+        uses: actions/setup-dotnet@v4
+        with: { dotnet-version: "8.0.x" }
+      - name: Install project dependencies
+        run: |
+          if [ -f package-lock.json ]; then npm ci; elif [ -f package.json ]; then npm install; fi
+          if command -v dotnet >/dev/null && { compgen -G '*.sln' || compgen -G '*.slnx' || compgen -G '*.csproj' || compgen -G '*.fsproj'; } >/dev/null; then dotnet restore; fi
+      - name: Verify PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          PORTKEY_API_KEY: ${{ secrets.PORTKEY_API_KEY }}
+          UFACTORY_HANDOFF_KEY: ${{ secrets.UFACTORY_HANDOFF_KEY }}
+          PR: ${{ github.event.pull_request.number }}
+        run: ufactory verify --pr "$PR" --apply
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: "factory-runs-verify-${{ github.run_id }}", path: docs/factory/runs/, if-no-files-found: ignore }
+
+  monitor:
+    if: >-
+      (github.event_name == 'schedule' && github.event.schedule == '41 6 * * 1') ||
+      (github.event_name == 'workflow_dispatch' && inputs.stage == 'monitor')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read
+    concurrency:
+      group: factory-monitor
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Install ultimate-factory
+        run: |
+          bash -c "$PIN_CHECK"
+          npm install --global --no-audit --no-fund "$UFACTORY_PACKAGE"
+      - name: Set up .NET (only for repositories with a global.json)
+        if: hashFiles('global.json') != ''
+        uses: actions/setup-dotnet@v4
+        with: { global-json-file: global.json }
+      - name: Set up .NET (latest LTS when there is no global.json)
+        if: hashFiles('global.json') == '' && hashFiles('**/*.sln', '**/*.slnx', '**/*.csproj', '**/*.fsproj') != ''
+        uses: actions/setup-dotnet@v4
+        with: { dotnet-version: "8.0.x" }
+      - name: Install project dependencies
+        run: |
+          if [ -f package-lock.json ]; then npm ci; elif [ -f package.json ]; then npm install; fi
+          if command -v dotnet >/dev/null && { compgen -G '*.sln' || compgen -G '*.slnx' || compgen -G '*.csproj' || compgen -G '*.fsproj'; } >/dev/null; then dotnet restore; fi
+      - name: Monitor
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          PORTKEY_API_KEY: ${{ secrets.PORTKEY_API_KEY }}
+        run: ufactory monitor --apply
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: "factory-runs-monitor-${{ github.run_id }}", path: docs/factory/runs/, if-no-files-found: ignore }
+
+  status:
+    if: github.event_name == 'workflow_dispatch' && inputs.stage == 'status'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: |
+          bash -c "$PIN_CHECK"
+          npm install --global --no-audit --no-fund "$UFACTORY_PACKAGE"
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: ufactory status >> "$GITHUB_STEP_SUMMARY"
+
+  # Collects this run's records from every job and appends them to the factory-records branch with
+  # git plumbing (no checkout of that branch, no repository code). Exclude the branch from rules
+  # that block pushes by github-actions, or give FACTORY_GH_TOKEN access to it.
+  records:
+    needs: [triage, implement, verify-new-pr, verify, monitor]
+    if: always() && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    concurrency:
+      group: factory-records
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Install ultimate-factory
+        run: |
+          bash -c "$PIN_CHECK"
+          npm install --global --no-audit --no-fund "$UFACTORY_PACKAGE"
+      - uses: actions/download-artifact@v4
+        with: { pattern: "factory-runs-*", path: docs/factory/runs, merge-multiple: true }
+      - name: Push records
+        env:
+          GH_TOKEN: ${{ secrets.FACTORY_GH_TOKEN || github.token }}
+        run: |
+          gh auth setup-git
+          ufactory records push --apply

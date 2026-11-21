@@ -1,0 +1,33 @@
+# Dependencies and build output
+node_modules/
+dist/
+*.tsbuildinfo
+coverage/
+
+# Packed releases (npm pack)
+*.tgz
+
+# Secrets: never commit keys; an example file may be committed
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+
+# Local clones of reference projects
+.refs/
+
+# Factory scratch output
+.factory-runs-tmp/
+
+# Per-user Claude Code settings (the shared skills under .claude/ stay committed)
+.claude/settings.local.json
+
+# Editor and OS files
+.DS_Store
+/.idea/
+/.vscode/
+*.swp
+*~

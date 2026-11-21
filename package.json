@@ -1,0 +1,58 @@
+{
+  "name": "ultimate-factory",
+  "version": "1.0.1",
+  "description": "Provider-neutral software factory: charter-governed triage, spec, implement, verify, review and monitor stages on any OpenAI-compatible endpoint (OpenAI, Portkey, Azure, local).",
+  "license": "MIT",
+  "author": "Tarun Patnala",
+  "homepage": "https://github.com/tarunpatnala/ultimate-factory#readme",
+  "bugs": {
+    "url": "https://github.com/tarunpatnala/ultimate-factory/issues"
+  },
+  "type": "module",
+  "bin": {
+    "ufactory": "bin/ufactory.js"
+  },
+  "files": [
+    "bin",
+    "dist/src",
+    "template",
+    "factory.config.example.yaml",
+    "README.md",
+    "LICENSE",
+    "docs/HARNESS-GATEWAYS.md"
+  ],
+  "engines": {
+    "node": ">=20.10"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json && node scripts/lint.mjs",
+    "test": "npm run build && node --test --test-reporter=spec dist/test/*.test.js",
+    "test:shell": "bash test/shell/run.sh",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "picomatch": "^4.0.7",
+    "yaml": "^2.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0",
+    "@types/picomatch": "^4.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tarunpatnala/ultimate-factory.git"
+  },
+  "keywords": [
+    "software-factory",
+    "ai-agent",
+    "openai",
+    "portkey",
+    "llm",
+    "github-actions",
+    "code-review",
+    "autonomous-coding"
+  ]
+}

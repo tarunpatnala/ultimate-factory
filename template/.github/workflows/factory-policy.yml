@@ -1,0 +1,69 @@
+# Harness-neutral charter enforcement. No LLM, no secrets, safe for fork PRs.
+# Make "factory-policy / policy-check" a REQUIRED status check in your branch ruleset so a
+# PR written by any agent (Claude Code, Codex, ufactory) or human cannot merge while it
+# violates docs/factory/CHARTER.md.
+#
+# Overriding (load-bearing, protected, test or size rules; secret files are never overridable):
+# a reviewer with write access or higher (not the PR author) whose latest review APPROVES the
+# CURRENT head commit and adds the label "factory:human-approved". Any new push invalidates the
+# approval because the review is tied to a commit SHA.
+name: factory-policy
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled, ready_for_review]
+  pull_request_review:
+    types: [submitted, dismissed]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  policy-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Install ultimate-factory
+        env:
+          UFACTORY_PACKAGE: ${{ vars.UFACTORY_PACKAGE }}
+        run: |
+          [ -n "$UFACTORY_PACKAGE" ] || { echo "::error::Set the repository variable UFACTORY_PACKAGE (e.g. ultimate-factory@1.0.1)"; exit 2; }
+          printf '%s' "$UFACTORY_PACKAGE" | grep -Eq '(@[0-9]+\.[0-9]+\.[0-9]+$)|(#v?[0-9]+\.[0-9]+\.[0-9]+$)|(#[0-9a-f]{40}$)' \
+            || { echo "::error::UFACTORY_PACKAGE must be pinned to an exact version, tag or commit"; exit 2; }
+          npm install --global --no-audit --no-fund "$UFACTORY_PACKAGE"
+      - name: Find a verified human approval of the current head commit
+        id: approval
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+          LABELED: ${{ contains(github.event.pull_request.labels.*.name, 'factory:human-approved') }}
+        run: |
+          approver=""
+          if [ "$LABELED" = "true" ]; then
+            # Latest review per reviewer; keep those that APPROVE the current head commit.
+            candidates="$(gh api "repos/$REPO/pulls/$PR/reviews" --paginate --jq '.[]' | jq -rs \
+              --arg sha "$HEAD_SHA" --arg author "$AUTHOR" \
+              'map(select(.state != "COMMENTED")) | group_by(.user.login) | map(last)
+               | map(select(.state == "APPROVED" and .commit_id == $sha and .user.login != $author)) | .[].user.login')"
+            for login in $candidates; do
+              # Reviewer must have write access or higher (read-only collaborators cannot override).
+              perm="$(gh api "repos/$REPO/collaborators/$login/permission" --jq .permission 2>/dev/null || true)"
+              case "$perm" in admin|maintain|write) approver="$login"; break ;; esac
+            done
+          fi
+          echo "approver=$approver" >> "$GITHUB_OUTPUT"
+      - name: Charter policy check
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          APPROVER: ${{ steps.approval.outputs.approver }}
+        run: ufactory policy-check --base "origin/$BASE_REF" ${APPROVER:+--human-approved-by "$APPROVER"}
