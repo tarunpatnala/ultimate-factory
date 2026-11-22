@@ -34,7 +34,7 @@ jobs:
         env:
           UFACTORY_PACKAGE: ${{ vars.UFACTORY_PACKAGE }}
         run: |
-          [ -n "$UFACTORY_PACKAGE" ] || { echo "::error::Set the repository variable UFACTORY_PACKAGE (e.g. ultimate-factory@1.1.0)"; exit 2; }
+          [ -n "$UFACTORY_PACKAGE" ] || { echo "::error::Set the repository variable UFACTORY_PACKAGE (e.g. ultimate-factory@1.1.1)"; exit 2; }
           printf '%s' "$UFACTORY_PACKAGE" | grep -Eq '(@[0-9]+\.[0-9]+\.[0-9]+$)|(#v?[0-9]+\.[0-9]+\.[0-9]+$)|(#[0-9a-f]{40}$)' \
             || { echo "::error::UFACTORY_PACKAGE must be pinned to an exact version, tag or commit"; exit 2; }
           npm install --global --no-audit --no-fund "$UFACTORY_PACKAGE"

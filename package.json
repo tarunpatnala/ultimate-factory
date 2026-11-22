@@ -1,6 +1,6 @@
 {
   "name": "ultimate-factory",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Provider-neutral software factory: charter-governed triage, spec, implement, verify, review and monitor stages on any OpenAI-compatible endpoint (OpenAI, Portkey, Azure, local).",
   "license": "MIT",
   "author": "Tarun Patnala",

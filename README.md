@@ -329,7 +329,7 @@ Every stage that writes to GitHub is a dry run unless you pass `--apply`.
 Setup:
 
 1. **Variable `UFACTORY_PACKAGE` (required)**: where Actions installs ultimate-factory from,
-   pinned, e.g. `ultimate-factory@1.1.0` (the npm release) or `github:tarunpatnala/ultimate-factory#v1.1.0`.
+   pinned, e.g. `ultimate-factory@1.1.1` (the npm release) or `github:tarunpatnala/ultimate-factory#v1.1.1`.
    Workflows refuse to run without it; they never install a floating version.
 2. Secrets: `OPENAI_API_KEY` and/or `PORTKEY_API_KEY` (plus any other `*_env` names your config
    uses). Optional `FACTORY_GH_TOKEN`: a GitHub App token or fine-grained PAT (contents, issues,
