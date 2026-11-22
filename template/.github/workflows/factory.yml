@@ -2,8 +2,8 @@
 #
 # Repository VARIABLES (Settings -> Secrets and variables -> Actions -> Variables):
 #   UFACTORY_PACKAGE   REQUIRED. Where to install ultimate-factory from, pinned. Examples:
-#                        ultimate-factory@1.0.1
-#                        github:tarunpatnala/ultimate-factory#v1.0.1
+#                        ultimate-factory@1.1.0
+#                        github:tarunpatnala/ultimate-factory#v1.1.0
 #   UFACTORY_PROFILE   optional: "openai" or "portkey" (profile in factory.config.yaml)
 #   UFACTORY_BOT_LOGIN optional: login that posts factory comments when FACTORY_GH_TOKEN is an
 #                      App/PAT (default github-actions[bot])
@@ -56,7 +56,7 @@ env:
   # Refuse unpinned installs: exact semver (pkg@1.2.3) or a git URL with #tag/#sha.
   PIN_CHECK: |
     case "$UFACTORY_PACKAGE" in
-      "") echo "::error::Set the repository variable UFACTORY_PACKAGE (e.g. ultimate-factory@1.0.1)"; exit 2 ;;
+      "") echo "::error::Set the repository variable UFACTORY_PACKAGE (e.g. ultimate-factory@1.1.0)"; exit 2 ;;
     esac
     if ! printf '%s' "$UFACTORY_PACKAGE" | grep -Eq '(@[0-9]+\.[0-9]+\.[0-9]+$)|(#v?[0-9]+\.[0-9]+\.[0-9]+$)|(#[0-9a-f]{40}$)'; then
       echo "::error::UFACTORY_PACKAGE must be pinned to an exact version, tag or commit (got: $UFACTORY_PACKAGE)"; exit 2
