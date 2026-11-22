@@ -34,4 +34,16 @@ printf '%s' "$false_proof_output" | grep -q 'status=FAILED'
 grep -qx new "$fixture/value.txt"
 [ -z "$(git -C "$fixture" status --short)" ]
 
+# Two proofs at once must not share a temp file (BSD mktemp only replaces trailing X's).
+clone="$fixture/clone"
+git clone -q "$fixture" "$clone"
+(cd "$fixture" && "$ROOT/template/.factory/scripts/prove-test.sh" HEAD^ --test-path tests/value-test.sh -- bash -c 'sleep 1; bash tests/value-test.sh') > "$fixture/.p1" 2>&1 &
+p1=$!
+(cd "$clone" && "$ROOT/template/.factory/scripts/prove-test.sh" HEAD^ --test-path tests/value-test.sh -- bash -c 'sleep 1; bash tests/value-test.sh') > "$fixture/.p2" 2>&1 &
+p2=$!
+wait "$p1" && wait "$p2" || { cat "$fixture/.p1" "$fixture/.p2" >&2; exit 1; }
+grep -q 'status=PROVEN' "$fixture/.p1"
+grep -q 'status=PROVEN' "$fixture/.p2"
+rm -f "$fixture/.p1" "$fixture/.p2"
+
 echo "proof: ok"

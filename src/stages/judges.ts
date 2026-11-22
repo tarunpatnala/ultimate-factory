@@ -53,7 +53,9 @@ function evidence(ctx: RunContext, i: JudgeInput): string {
 }
 
 export async function runVerifier(ctx: RunContext, i: JudgeInput): Promise<VerifierVerdict> {
-  const lessons = readLessons(ctx.root, ctx.cfg.learning).text;
+  const read = readLessons(ctx.root, ctx.cfg.learning);
+  const lessons = read.text;
+  ctx.record.set('lessons_active', read.ids);
   const { value } = await chatJson<VerifierVerdict>(
     ctx.llm('verify'),
     [

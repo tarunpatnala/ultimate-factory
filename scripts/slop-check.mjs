@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { formatFindings, scanLines } from '../dist/src/policy/slop.js';
 
 // Files that list the banned words and patterns themselves.
-const EXEMPT = new Set(['src/policy/slop.ts', 'scripts/slop-check.mjs', 'test/hardening.test.ts', 'test/fixtures/slop/sloppy-math.js']);
+const EXEMPT = new Set(['src/policy/slop.ts', 'scripts/slop-check.mjs', 'test/hardening.test.ts', 'test/eval.test.ts', 'test/fixtures/slop/sloppy-math.js']);
 const SKIP_DIRS = new Set(['node_modules', 'dist', '.git', '.refs', 'runs']);
 
 function walk(d, out) {

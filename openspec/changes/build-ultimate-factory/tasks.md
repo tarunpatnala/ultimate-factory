@@ -72,3 +72,4 @@
 - [x] 9.4 `ufactory tune` with one proposals issue and an optional draft lessons PR built with git plumbing (tests: idempotent issue and outcome, checkout untouched, default branch unchanged)
 - [x] 9.5 `docs/factory/LESSONS.md` read by implement and the verifier, protected from the agent (test: model writes the lessons file; proposed lessons never reach a prompt)
 - [x] 9.6 Weekly `tune` job without repository code; `learning:` config; metrics shows outcomes
+- [x] 9.7 Closed-loop evaluation over real implement runs with scripted models (`test/eval.test.ts`): lessons judged only by runs that had them, test edits proposed as a lesson, refusal codes normalised; proof temp file unique on macOS (shell test: two proofs at once)

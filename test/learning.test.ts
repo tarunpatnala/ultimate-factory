@@ -74,15 +74,19 @@ test('analyze: a verifier objection recurring in min_occurrences runs becomes on
   assert.equal(analyze({ records, activeLessonIds: [], minOccurrences: 3, windowDays: 30, now: NOW }).proposals[0]!.id, lessons[0]!.id);
   // Below the threshold nothing is proposed, and runtime-generated must_fix lines never cluster.
   assert.equal(analyze({ records: records.slice(0, 2), activeLessonIds: [], minOccurrences: 3, windowDays: 30, now: NOW }).proposals.length, 0);
-  // Once that lesson is active and still recurring, tune says it is not working instead of re-proposing it.
-  const again = analyze({ records, activeLessonIds: [lessons[0]!.id], minOccurrences: 3, windowDays: 30, now: NOW });
+  // Once the lesson is active, runs from before it was accepted are not held against it...
+  const id = lessons[0]!.id;
+  assert.equal(analyze({ records, activeLessonIds: [id], minOccurrences: 3, windowDays: 30, now: NOW }).proposals.length, 0);
+  // ...but if it keeps recurring in runs that were given the lesson, tune says it is not working.
+  const withLesson = records.map((r) => ({ ...r, lessons_active: [id] }));
+  const again = analyze({ records: withLesson, activeLessonIds: [id], minOccurrences: 3, windowDays: 30, now: NOW });
   assert.equal(again.proposals[0]!.kind, 'lesson-not-working');
 });
 
 test('analyze: escaped defects come first, repeated refusals point at triage, loosening needs a clean record', () => {
   const outcome = (n: number, o: string): Rec => ({ file: `o${n}.md`, run_id: `out-${n}`, stage: 'outcome', status: 'succeeded', started_at: day(1), pull_request: n, issue: n + 100, outcome: o as Rec['outcome'], outcome_evidence: [`evidence ${n}`], source_run: `run-${n}` });
   const records = [
-    ...[1, 2, 3].map((n) => run(n, { learn_signals: ['refusal:protected path', 'slop:narrating comment', 'gate:test'] })),
+    ...[1, 2, 3].map((n) => run(n, { learn_signals: ['refusal:protected-path', 'slop:narrating comment', 'gate:test'] })),
     outcome(41, 'reverted'),
     ...Array.from({ length: 12 }, (_, i) => outcome(50 + i, 'merged-clean')),
   ];
@@ -176,7 +180,8 @@ test('lessons in a run: Active lessons reach implement and the verifier; the mod
   assert.match(verSys, /start the must_fix entry with the lesson id/);
   const d = join(dir, 'docs/factory/runs');
   const rec = readFileSync(join(d, readdirSync(d).filter((f) => f !== 'README.md').sort().pop()!), 'utf8');
-  assert.match(rec, /refusal:protected path/);
+  assert.match(rec, /refusal:protected-path/);
+  assert.match(rec, /lessons_active:\n\s+- L-1a2b3c/);
 });
 
 test('lessons file is protected by default and when relocated', () => {

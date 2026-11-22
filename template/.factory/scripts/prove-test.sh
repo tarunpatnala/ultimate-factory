@@ -52,7 +52,7 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
   exit 2
 fi
 
-patch_file="$(mktemp "${TMPDIR:-/tmp}/factory-proof.XXXXXX.patch")"
+patch_file="$(mktemp "${TMPDIR:-/tmp}/factory-proof.XXXXXX")"
 reverted=0
 
 restore() {

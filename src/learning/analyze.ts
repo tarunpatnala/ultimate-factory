@@ -83,6 +83,7 @@ export function analyze(o: { records: Rec[]; activeLessonIds: string[]; minOccur
   const min = o.minOccurrences;
   const proposals: Proposal[] = [];
   const runId = (r: Rec) => String(r.run_id ?? r.file);
+  const byId = new Map(runs.map((r) => [runId(r), r]));
 
   // 1. Escaped defects first: each one is a gate that let something through.
   for (const r of outcomes.filter((x) => BAD_OUTCOMES.has(String(x.outcome)))) {
@@ -122,9 +123,11 @@ export function analyze(o: { records: Rec[]; activeLessonIds: string[]; minOccur
     const id = hid('L', [...c.key].sort().join(' '));
     const evidence = [`${c.runs.size} runs: ${[...c.runs].slice(0, 5).join(', ')}${c.runs.size > 5 ? ', ...' : ''}`, ...[...c.examples.keys()].slice(0, 3).map((e) => `verifier: "${e}"`)];
     if (o.activeLessonIds.includes(id)) {
-      proposals.push({ id, kind: 'lesson-not-working', title: `Lesson ${id} is active but the verifier still raised it in ${c.runs.size} runs`, evidence, action: 'Reword the lesson so it is concrete, or replace it with a deterministic check (lint rule, test helper, gate).' });
+      // Judge a lesson only by runs whose models were given it; objections from before it was accepted are why it exists.
+      const since = [...c.runs].filter((rid) => byId.get(rid)?.lessons_active?.includes(id));
+      if (since.length >= min) proposals.push({ id, kind: 'lesson-not-working', title: `Lesson ${id} is active but the verifier still raised it in ${since.length} runs that had the lesson`, evidence: [`${since.length} runs: ${since.slice(0, 5).join(', ')}${since.length > 5 ? ', ...' : ''}`, ...evidence.slice(1)], action: 'Reword the lesson so it is concrete, or replace it with a deterministic check (lint rule, test helper, gate).' });
     } else {
-      proposals.push({ id, kind: 'lesson', title: `The verifier asked for the same fix in ${c.runs.size} runs`, evidence, action: `Accept by merging the lesson into the Active section of the lessons file.${c.runs.size >= 2 * min ? ' At this frequency, also consider a deterministic check instead.' : ''}`, lesson: example });
+      proposals.push({ id, kind: 'lesson', title: `The verifier asked for the same fix in ${c.runs.size} runs`, evidence, action: `Accept by merging the lesson into the Active section of the lessons file. Reword it as an instruction that holds for any issue first.${c.runs.size >= 2 * min ? ' At this frequency, also consider a deterministic check instead.' : ''}`, lesson: `Recurring verifier objection; check the diff for it before calling finish: ${example}` });
     }
   }
   for (const [id, hits] of lessonHits) {
@@ -149,6 +152,11 @@ export function analyze(o: { records: Rec[]; activeLessonIds: string[]; minOccur
   for (const [code, ids] of byKind('refusal')) scope.set(code, new Set(ids));
   for (const r of impl) if (SCOPE_REASONS.has(String(r.stop_reason))) (scope.get(String(r.stop_reason)) ?? scope.set(String(r.stop_reason), new Set()).get(String(r.stop_reason))!).add(runId(r));
   for (const [code, ids] of [...scope.entries()].filter(([, v]) => v.size >= min)) {
+    if (code === 'test-modified') {
+      // The agent editing existing tests is model behaviour, not a triage problem.
+      proposals.push({ id: hid('L', 'refusal test-modified'), kind: 'lesson', title: `The agent tried to modify an existing test in ${ids.size} runs`, evidence: [`runs: ${[...ids].slice(0, 5).join(', ')}`], action: 'Accept to tell the implementer up front; the runtime already refuses the write. If the items genuinely need test changes, they are not automatable: route them to a human in triage.', lesson: 'Never edit or relax an existing test file, even when it looks wrong; the runtime refuses the write. Add a new test file instead, or give_up if the item needs an existing test changed.' });
+      continue;
+    }
     proposals.push({ id: hid('S', `scope ${code}`), kind: 'charter', title: `${ids.size} runs hit "${code}"`, evidence: [`runs: ${[...ids].slice(0, 5).join(', ')}`], action: 'Triage is sending items the charter does not allow. Narrow AUTOMATABLE or add the paths to the triage rules in the charter; do not widen the charter to fit the items.' });
   }
   const proofFailed = impl.filter((r) => r.stop_reason === 'proof-failed');

@@ -392,7 +392,8 @@ Nothing in the loop edits the charter, the gates or the prompts in place.
 
 1. **Signals.** Each run record lists what went wrong on the way in a fixed vocabulary
    (`learn_signals`): the verifier's `must_fix` points, gates that failed at `finish`, AI-slop
-   rules that refused it, and policy refusals.
+   rules that refused it, and policy refusals. It also lists the lessons the models were given
+   (`lessons_active`), so a lesson is only judged by runs that had it.
 2. **Outcomes.** `ufactory tune` checks every factory PR the records know about and writes one
    outcome record once the result is final: `closed-unmerged`, `reverted` (a revert of its merge
    commit on the default branch), `fixed-after-merge` (a "fix"/"bug"/"regression" commit to the same
@@ -405,8 +406,8 @@ Nothing in the loop edits the charter, the gates or the prompts in place.
    | Kind | Raised when | What a human does |
    |---|---|---|
    | `tighten` | A merged PR was reverted, fixed afterwards or labelled escaped | Find the gate that missed it and tighten it |
-   | `lesson` | The same verifier objection, AI-slop rule or failed proof recurs in `learning.min_occurrences` runs (default 3) | Accept the lesson text, or reword it |
-   | `lesson-not-working`, `gate` | An active lesson keeps being raised or broken | Reword it, or replace it with a lint rule, test or gate |
+   | `lesson` | The same verifier objection, AI-slop rule, existing-test edit or failed proof recurs in `learning.min_occurrences` runs (default 3) | Accept the lesson text, or reword it |
+   | `lesson-not-working`, `gate` | An active lesson keeps being raised or broken in runs that were given it | Reword it, or replace it with a lint rule, test or gate |
    | `check` | The same gate fails at `finish` repeatedly | Fix the cause or the flaky gate; never loosen it to pass |
    | `charter` | Runs keep hitting the same scope refusal | Narrow triage (`AUTOMATABLE`), not the charter |
    | `loosen-candidate` | 10+ merged-clean PRs and nothing reverted or fixed in the window | Decide whether a limit can widen, and record it in `DECISIONS.md` |

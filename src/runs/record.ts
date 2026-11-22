@@ -48,6 +48,8 @@ export interface RunFields {
    * gate:<failing gate>, slop:<rule>, refusal:<policy code>. Empty for a clean run.
    */
   learn_signals: string[];
+  /** Ids of the Active lessons the models were given, so tune only judges a lesson by runs that had it. */
+  lessons_active?: string[];
   /** Outcome records only (stage "outcome"): what happened to the PR after it was opened. */
   outcome?: PrOutcome;
   outcome_evidence?: string[];
@@ -112,7 +114,9 @@ export class RunRecord {
 
   /** Add a learning signal: one line, no duplicates, at most MAX_SIGNALS per run. */
   signal(kind: 'verifier' | 'gate' | 'slop' | 'refusal', text: string): this {
-    const s = `${kind}:${text.replace(/\s+/g, ' ').trim().slice(0, 200)}`;
+    const one = text.replace(/\s+/g, ' ').trim();
+    // Refusals are codes: "protected path" from the workspace and "protected-path" from the policy are one thing.
+    const s = `${kind}:${(kind === 'refusal' ? one.toLowerCase().replace(/ /g, '-') : one).slice(0, 200)}`;
     if (s.length > kind.length + 1 && !this.fields.learn_signals.includes(s) && this.fields.learn_signals.length < MAX_SIGNALS) this.fields.learn_signals.push(s);
     return this;
   }

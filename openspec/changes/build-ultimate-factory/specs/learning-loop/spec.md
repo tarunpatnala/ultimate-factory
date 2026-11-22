@@ -6,11 +6,11 @@ Let the factory improve from its own runs while every change to its behaviour st
 ## ADDED Requirements
 
 ### Requirement: Learning signals in run records
-Implement and verify SHALL record what went wrong during a run in the `learn_signals` front-matter list, using the prefixes `verifier:` (each `must_fix` of a rejection), `gate:` (each gate failing at finish), `slop:` (each AI-slop rule that refused finish) and `refusal:` (each policy refusal), one line each, without duplicates, at most 40 per run.
+Implement and verify SHALL record what went wrong during a run in the `learn_signals` front-matter list, using the prefixes `verifier:` (each `must_fix` of a rejection), `gate:` (each gate failing at finish), `slop:` (each AI-slop rule that refused finish) and `refusal:` (each policy refusal, as a lowercase hyphenated code), one line each, without duplicates, at most 40 per run. Each record SHALL also list the ids of the Active lessons its models were given in `lessons_active`.
 
 #### Scenario: Protected write attempt
 - **WHEN** the agent tries to write a protected path and is refused
-- **THEN** the run record lists `refusal:protected path`
+- **THEN** the run record lists `refusal:protected-path`
 
 ### Requirement: PR outcome records
 `ufactory tune` SHALL write one immutable record with `stage: outcome` per factory PR once its outcome is final, and MUST NOT write one for an open PR or one still inside `learning.outcome_window_days` after merge.
@@ -34,11 +34,18 @@ The outcome SHALL be `closed-unmerged`, `escaped` (labelled `factory:escaped`), 
 - **THEN** no proposal is made for it
 
 ### Requirement: Proposal kinds
-Proposals SHALL be `tighten` for every bad outcome (ranked first), `lesson` for a verifier objection, AI-slop rule or failed proof recurring in `learning.min_occurrences` runs, `lesson-not-working` or `gate` for an active lesson that keeps recurring or being cited, `check` for a recurring failed gate, `charter` for a recurring scope refusal, and `loosen-candidate` only after 10 `merged-clean` outcomes with no bad outcome.
+Proposals SHALL be `tighten` for every bad outcome (ranked first), `lesson` for a verifier objection, AI-slop rule, existing-test edit or failed proof recurring in `learning.min_occurrences` runs, `lesson-not-working` or `gate` for an active lesson that keeps recurring or being cited in runs that were given it, `check` for a recurring failed gate, `charter` for a recurring scope refusal, and `loosen-candidate` only after 10 `merged-clean` outcomes with no bad outcome.
 
 #### Scenario: Revert blocks loosening
 - **WHEN** the window holds 12 clean merges and one revert
 - **THEN** there is a `tighten` proposal and no `loosen-candidate`
+
+### Requirement: Lessons judged after acceptance
+`tune` SHALL judge an Active lesson only by runs whose `lessons_active` includes it, and MUST NOT report it as not working because of objections from before it was accepted.
+
+#### Scenario: Lesson followed
+- **WHEN** a lesson is accepted after 3 rejections and the next 3 runs that had it pass
+- **THEN** tune proposes nothing for that lesson
 
 ### Requirement: Proposals never apply themselves
 With `--apply`, tune SHALL create or update one open issue marked `<!-- factory-tune:v1 -->` and labelled `factory:tune`. With `--open-pr` it SHALL push a new branch, built with git plumbing from the default branch tip, adding the proposed lessons to the Active section of the lessons file, and open it as a draft PR. Tune MUST NOT modify the charter, gates, lessons file or checkout in place.

@@ -523,6 +523,7 @@ function buildSystemPrompt(ctx: RunContext, item: WorkItem, level: GateLevel): s
   const contractPath = join(ctx.root, ctx.cfg.factory.contract);
   const contract = existsSync(contractPath) ? readFileSync(contractPath, 'utf8').slice(0, 12_000) : '';
   const lessons = readLessons(ctx.root, ctx.cfg.learning);
+  ctx.record.set('lessons_active', lessons.ids);
   return [
     'You are the implementation agent of a software factory. You implement exactly ONE queue item with the smallest diff that makes done_when true.',
     'Rules (enforced by the runtime; violating them ends the run):',
