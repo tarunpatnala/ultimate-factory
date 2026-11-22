@@ -43,7 +43,20 @@ export interface RunFields {
   models_served: string[];
   profile: string;
   factory_version: string;
+  /**
+   * What went wrong on the way, in a fixed vocabulary that `tune` counts: verifier:<must_fix>,
+   * gate:<failing gate>, slop:<rule>, refusal:<policy code>. Empty for a clean run.
+   */
+  learn_signals: string[];
+  /** Outcome records only (stage "outcome"): what happened to the PR after it was opened. */
+  outcome?: PrOutcome;
+  outcome_evidence?: string[];
+  source_run?: string;
 }
+
+/** Final states only: an outcome record is written once, when nothing can change it any more. */
+export type PrOutcome = 'merged-clean' | 'reverted' | 'fixed-after-merge' | 'escaped' | 'closed-unmerged';
+export const MAX_SIGNALS = 40;
 
 export function makeRunId(stage: string, ref?: number | string, now = new Date()): string {
   const ts = now.toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
@@ -88,11 +101,19 @@ export class RunRecord {
       models_served: [],
       profile,
       factory_version: VERSION,
+      learn_signals: [],
     };
   }
 
   set<K extends keyof RunFields>(k: K, v: RunFields[K]): this {
     this.fields[k] = v;
+    return this;
+  }
+
+  /** Add a learning signal: one line, no duplicates, at most MAX_SIGNALS per run. */
+  signal(kind: 'verifier' | 'gate' | 'slop' | 'refusal', text: string): this {
+    const s = `${kind}:${text.replace(/\s+/g, ' ').trim().slice(0, 200)}`;
+    if (s.length > kind.length + 1 && !this.fields.learn_signals.includes(s) && this.fields.learn_signals.length < MAX_SIGNALS) this.fields.learn_signals.push(s);
     return this;
   }
 
@@ -187,4 +208,22 @@ export function spendLast24h(dir: string, now = Date.now()): number {
     }
   }
   return Math.round(total * 10_000) / 10_000;
+}
+
+/** Every parseable record in dir with its front matter (arrays kept), sorted by file name. */
+export function readRecordFields(dir: string): Array<Partial<RunFields> & { file: string }> {
+  if (!existsSync(dir)) return [];
+  const out: Array<Partial<RunFields> & { file: string }> = [];
+  for (const f of readdirSync(dir).sort()) {
+    if (!f.endsWith('.md') || f === 'README.md') continue;
+    const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(readFileSync(join(dir, f), 'utf8'))?.[1];
+    if (!fm) continue;
+    try {
+      const p = parseYaml(fm) as Partial<RunFields>;
+      if (p && typeof p === 'object') out.push({ ...p, file: f });
+    } catch {
+      /* metrics reports unparseable records; analysis skips them */
+    }
+  }
+  return out;
 }

@@ -172,5 +172,15 @@ factory:
 spec:
   format: factory               # or "openspec" to write gates under openspec/changes/fq-<n>/
 
+# ---------------------------------------------------------------------------------------------
+# Learning loop (ufactory tune): proposes, never applies. A human merges lessons and edits the charter.
+# ---------------------------------------------------------------------------------------------
+learning:
+  lessons: docs/factory/LESSONS.md   # Active section is read by implement and the verifier; protected from the agent
+  max_lesson_chars: 6000        # cap on lesson text sent to the models
+  window_days: 30               # how far back tune reads run records
+  outcome_window_days: 14       # a merged PR counts as clean after this many days with no revert or fix-up
+  min_occurrences: 3            # runs a pattern needs before tune proposes anything
+
 logging:
   level: info

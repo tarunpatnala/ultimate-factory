@@ -229,6 +229,22 @@ export class GitHub {
     }));
   }
 
+  /** What `tune` needs to decide a PR's outcome: state, merge commit and labels. */
+  async getPullOutcome(n: number): Promise<{ number: number; state: 'open' | 'closed'; mergedAt?: string; mergeCommitSha?: string; labels: string[] }> {
+    const p = await this.api<any>(`repos/{owner}/{repo}/pulls/${n}`);
+    return {
+      number: Number(p.number ?? n),
+      state: p.state === 'closed' ? 'closed' : 'open',
+      mergedAt: p.merged_at ?? undefined,
+      mergeCommitSha: p.merged_at ? (p.merge_commit_sha ?? undefined) : undefined,
+      labels: (p.labels ?? []).map((l: any) => l.name),
+    };
+  }
+
+  async updateIssueBody(n: number, body: string): Promise<void> {
+    await this.write(`#${n} update body`, () => this.api(`repos/{owner}/{repo}/issues/${n}`, 'PATCH', { body }));
+  }
+
   /** Closed PRs whose head is a factory claim branch (most recent 300). */
   async listClosedFactoryPulls(prefix: string): Promise<Array<{ number: number; merged: boolean }>> {
     const res: Array<{ number: number; merged: boolean }> = [];

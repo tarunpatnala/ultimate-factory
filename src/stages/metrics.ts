@@ -17,6 +17,7 @@ interface Rec {
   tokens_prompt?: number;
   tokens_completion?: number;
   usage_estimated?: boolean;
+  outcome?: string;
 }
 
 function readRecords(dir: string): Rec[] {
@@ -81,6 +82,7 @@ export async function metricsCommand(ctx: RunContext, o: { json: boolean }): Pro
       proof: count(attempted.map((r) => String(r.proof_status ?? 'not-run'))),
       verifier: count(attempted.map((r) => String(r.verifier ?? 'not-run'))),
       verifier_not_independent: attempted.filter((r) => r.verifier_independent === false).length,
+      outcomes_after_merge: count(recs.filter((r) => r.stage === 'outcome' && r.outcome).map((r) => String(r.outcome))),
     },
     cost: {
       total_usd: Math.round(totalCost * 100) / 100,
@@ -90,7 +92,8 @@ export async function metricsCommand(ctx: RunContext, o: { json: boolean }): Pro
     },
     notes: [
       'Rates use attempted runs (work was claimed) as the denominator; no-op runs (queue full, nothing to do) are excluded.',
-      'Cost includes every stage and every failed run. Escaped defects and reverts after merge are not tracked automatically; record them with a "factory:escaped" label.',
+      'Cost includes every stage and every failed run.',
+      'outcomes_after_merge comes from outcome records written by `ufactory tune`: reverts and fix-ups of the same files are detected from git history; label a PR "factory:escaped" for anything else that needed a fix.',
     ],
   };
   out.write(o.json ? JSON.stringify(m, null, 2) + '\n' : renderMetrics(m) + '\n');

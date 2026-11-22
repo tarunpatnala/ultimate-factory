@@ -5,7 +5,8 @@ description: Review factory evidence and propose tighter or looser constraints w
 
 # Factory tuning for Codex
 
-Read `docs/factory/CONTRACT.md`, then follow `.claude/commands/factory-tune.md`. Propose
+Read `docs/factory/CONTRACT.md`, run `ufactory tune` for the evidence, then follow
+`.claude/commands/factory-tune.md`. Propose
 changes and record accepted human decisions in `docs/factory/DECISIONS.md`; never edit the
 charter or gate requirements on your own initiative.
 

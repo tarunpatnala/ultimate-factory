@@ -190,3 +190,26 @@ own scanner token; the factory's model keys and GitHub write token are never pre
 
 The factory's own `deep` gate already runs each stack's free audit tool (`npm audit`,
 `pip-audit`, `cargo audit`, `govulncheck`, the NuGet vulnerability list).
+
+## 12. Does the factory improve itself?
+
+Yes, through proposals a human approves. It never changes its own rules.
+
+Inside a run it already retries with feedback: red gates, policy refusals, AI-slop refusals and
+the verifier's `must_fix` list go back to the agent, with fixed limits on retries. Across runs,
+`ufactory tune` (weekly in Actions) does three things:
+
+- It records what happened to each factory PR after merge: reverted, fixed in the same files
+  within two weeks, labelled `factory:escaped`, or clean.
+- It finds problems that recur across runs (the same verifier objection, failing gate, AI-slop
+  rule or scope refusal) and posts proposals to one `factory:tune` issue. Escaped defects come
+  first, as gates to tighten.
+- Proposed lessons can arrive as a draft PR against `docs/factory/LESSONS.md` (`--open-pr`). Once
+  merged, the implementation agent and the verifier read them on every run.
+
+Why proposals and not automatic changes: the charter, protected paths and gates work because the
+model cannot change them. A loop that rewrote them could be steered by text that ends up in a run
+record, would learn to pass the verifier rather than to be right, and would tune on a few dozen
+runs a month, which is mostly noise. So the loop counts patterns without a model call, the lessons
+file is protected from the agent, a PR that changes it needs a maintainer's approval, and a lesson
+cannot relax a rule. See README, "The learning loop".

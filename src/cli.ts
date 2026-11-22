@@ -14,6 +14,7 @@ import { triageCommand } from './stages/triage.js';
 import { verifyCommand } from './stages/verify.js';
 import { recordsCommand } from './stages/records.js';
 import { slopCommand } from './stages/slop.js';
+import { tuneCommand } from './stages/tune.js';
 import { FactoryError } from './util/errors.js';
 import { log } from './util/log.js';
 import { freezeGitConfig } from './util/git.js';
@@ -43,6 +44,8 @@ Stages (GitHub writes only with --apply; default is a dry run)
   run                    triage then implement (for cron)
   status                 Control room: review queue first
   metrics [--json]       Attempted / opened / merged rates, stop reasons, proof and verifier mix, cost per merged PR
+  tune                   Learning loop: record PR outcomes, find recurring problems, post proposals to one issue
+                         [--days N]  [--open-pr] (draft PR adding proposed lessons; merging it is the approval)
 
 Checks (no LLM, no secrets)
   policy-check --base REF   Enforce the charter on the real diff; prints a FACTORY_POLICY v=1 line
@@ -70,7 +73,7 @@ interface Parsed {
 export function parseArgs(argv: string[]): Parsed {
   const cmd: string[] = [];
   const flags: Record<string, string | boolean> = {};
-  const BOOL = new Set(['apply', 'dry-run', 'with-workflows', 'local', 'ping', 'verbose', 'quiet', 'help', 'version', 'json', 'allow-load-bearing']);
+  const BOOL = new Set(['apply', 'dry-run', 'with-workflows', 'local', 'ping', 'verbose', 'quiet', 'help', 'version', 'json', 'allow-load-bearing', 'open-pr']);
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a.startsWith('--')) {
@@ -203,6 +206,8 @@ export async function main(argv: string[]): Promise<number> {
       return metricsCommand(RunContext.create('metrics', { ...g, noRecord: true }), { json: flags.json === true });
     case 'monitor':
       return monitorCommand(RunContext.create('monitor', g));
+    case 'tune':
+      return tuneCommand(RunContext.create('tune', g), { days: int(flags.days, 'days'), openPr: flags['open-pr'] === true });
     case 'run': {
       const t = await triageCommand(RunContext.create('triage', g), {});
       if (t === 3) return t;

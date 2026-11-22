@@ -6,6 +6,7 @@ import type { Charter } from './charter.js';
 export const BUILTIN_PROTECTED = [
   'docs/factory/CHARTER.md',
   'docs/factory/CONTRACT.md',
+  'docs/factory/LESSONS.md',
   '.factory/**',
   '.claude/**',
   '.agents/**',
@@ -94,9 +95,9 @@ export class PathPolicy {
 
   constructor(
     readonly charter: Pick<Charter, 'loadBearing'>,
-    readonly cfg: Pick<FactoryConfig, 'agent' | 'factory'>,
+    readonly cfg: Pick<FactoryConfig, 'agent' | 'factory'> & Partial<Pick<FactoryConfig, 'learning'>>,
   ) {
-    const protectedGlobs = [...BUILTIN_PROTECTED, cfg.factory.charter, cfg.factory.contract, cfg.factory.gates_script, cfg.factory.prove_script, ...cfg.agent.protected_extra];
+    const protectedGlobs = [...BUILTIN_PROTECTED, cfg.factory.charter, cfg.factory.contract, cfg.factory.gates_script, cfg.factory.prove_script, ...(cfg.learning ? [cfg.learning.lessons] : []), ...cfg.agent.protected_extra];
     this.isProtected = picomatch(protectedGlobs.map(norm), OPTS);
     this.isLoadBearing = charter.loadBearing.length ? picomatch(charter.loadBearing.map(norm), OPTS) : () => false;
     this.isTest = picomatch(cfg.agent.test_paths.map(norm), OPTS);

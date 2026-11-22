@@ -263,6 +263,7 @@ function normalize(raw: Record<string, unknown>, errors: string[], policyOnly = 
   const review = obj(raw.review);
   const spec = obj(raw.spec);
   const logging = obj(raw.logging);
+  const learning = obj(raw.learning);
 
   const cfg: FactoryConfig = {
     version: 1,
@@ -322,6 +323,13 @@ function normalize(raw: Record<string, unknown>, errors: string[], policyOnly = 
     },
     logging: {
       level: oneOf(logging.level, ['debug', 'info', 'warn', 'error'] as const, 'info', 'logging.level', errors),
+    },
+    learning: {
+      lessons: str(learning.lessons, 'docs/factory/LESSONS.md'),
+      max_lesson_chars: int(learning.max_lesson_chars, 6000, 'learning.max_lesson_chars', errors, 500, 50_000),
+      window_days: int(learning.window_days, 30, 'learning.window_days', errors, 1, 365),
+      outcome_window_days: int(learning.outcome_window_days, 14, 'learning.outcome_window_days', errors, 1, 180),
+      min_occurrences: int(learning.min_occurrences, 3, 'learning.min_occurrences', errors, 2, 100),
     },
   };
 
@@ -587,7 +595,7 @@ function envRefs(node: unknown, out: string[] = []): string[] {
 }
 
 const KNOWN_KEYS: Record<string, string[]> = {
-  '': ['version', 'providers', 'models', 'profiles', 'active_profile', 'factory', 'github', 'budget', 'agent', 'review', 'spec', 'logging'],
+  '': ['version', 'providers', 'models', 'profiles', 'active_profile', 'factory', 'github', 'budget', 'agent', 'review', 'spec', 'logging', 'learning'],
   factory: ['charter', 'contract', 'gates_script', 'prove_script', 'runs_dir', 'specs_dir'],
   github: ['enabled', 'remote', 'default_branch', 'branch_prefix', 'max_issues_per_triage', 'trusted_associations', 'stale_claim_hours', 'handoff_key_env'],
   budget: ['max_turns', 'max_tokens_per_run', 'max_usd_per_run', 'max_runs_per_day', 'max_usd_per_day', 'max_minutes_per_run', 'prices'],
@@ -595,6 +603,7 @@ const KNOWN_KEYS: Record<string, string[]> = {
   review: ['personas', 'min_personas', 'persona_models', 'concurrency', 'block_quorum'],
   spec: ['format'],
   logging: ['level'],
+  learning: ['lessons', 'max_lesson_chars', 'window_days', 'outcome_window_days', 'min_occurrences'],
 };
 const PROVIDER_KEYS = ['type', 'base_url', 'api_key_env', 'organization_env', 'project_env', 'provider', 'provider_api_key_env', 'virtual_key_env', 'config', 'metadata', 'api_version', 'headers', 'timeout_ms', 'max_retries', 'capabilities'];
 const MODEL_KEYS = ['provider', 'model', 'temperature', 'top_p', 'max_output_tokens', 'token_param', 'reasoning_effort', 'json_mode', 'extra_body', 'fallbacks'];

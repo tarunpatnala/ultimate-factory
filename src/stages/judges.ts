@@ -1,4 +1,5 @@
 import type { RunContext } from '../context.js';
+import { lessonsBlock, readLessons } from '../learning/lessons.js';
 import { chatJson } from '../llm/client.js';
 
 export interface VerifierVerdict {
@@ -52,10 +53,11 @@ function evidence(ctx: RunContext, i: JudgeInput): string {
 }
 
 export async function runVerifier(ctx: RunContext, i: JudgeInput): Promise<VerifierVerdict> {
+  const lessons = readLessons(ctx.root, ctx.cfg.learning).text;
   const { value } = await chatJson<VerifierVerdict>(
     ctx.llm('verify'),
     [
-      { role: 'system', content: `${VERIFIER_SYSTEM}\n\n${ctx.fence.instruction}` },
+      { role: 'system', content: `${VERIFIER_SYSTEM}\n\n${ctx.fence.instruction}${lessons ? `\n\n${lessonsBlock('verify', lessons)}` : ''}` },
       { role: 'user', content: evidence(ctx, i) },
     ],
     (v: any) => {

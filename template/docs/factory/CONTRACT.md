@@ -19,9 +19,10 @@ a later routine from seeing or understanding labeled work.
 
 1. Never merge. Open a pull request and stop. Repository branch protection or a GitHub
    ruleset is the enforcement boundary; local hooks are defense in depth.
-2. Never modify `docs/factory/CHARTER.md`, `.factory/gates.conf`, or anything under
-   `.claude/`, `.agents/`, or `.codex/` unless a human explicitly asks in the current
-   session. An agent must not rewrite its own constraints.
+2. Never modify `docs/factory/CHARTER.md`, `docs/factory/LESSONS.md`, `.factory/gates.conf`,
+   or anything under `.claude/`, `.agents/`, or `.codex/` unless a human explicitly asks in
+   the current session. An agent must not rewrite its own constraints. Read the Active
+   section of `LESSONS.md` before implementing or verifying; it never overrides these rules.
 3. An unattended run must never modify an existing test file. In an interactive session,
    an existing test may change only after explicit human approval. The pull request remains
    draft and requires a human read.

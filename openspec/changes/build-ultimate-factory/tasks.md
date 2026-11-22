@@ -63,3 +63,12 @@
 - [x] 8.7 AI-slop rules for code and prose in `src/policy/slop.ts`; implement refuses finish, policy-check reports, lint applies them to this repo, `ufactory slop` (test: model writes a narrating comment)
 - [x] 8.8 C#/.NET in gates.sh, protected .NET manifests, .NET test paths, setup-dotnet in workflows (shell test with a stand-in dotnet)
 - [x] 8.9 Optional SonarQube, Snyk and Wiz PR jobs in `factory-scanners.yml`
+
+## 9. Phase 9: Learning loop
+
+- [x] 9.1 `learn_signals` in run records from implement and verify (test: protected write recorded as a refusal signal)
+- [x] 9.2 PR outcome records from GitHub state and default-branch history (tests: revert, same-file fix-up, unrelated fix, pending, clean, escaped label, unknown commit)
+- [x] 9.3 Deterministic proposal analysis with stable ids and thresholds (tests: clustering, below threshold, active lesson still recurring, loosening blocked by a revert)
+- [x] 9.4 `ufactory tune` with one proposals issue and an optional draft lessons PR built with git plumbing (tests: idempotent issue and outcome, checkout untouched, default branch unchanged)
+- [x] 9.5 `docs/factory/LESSONS.md` read by implement and the verifier, protected from the agent (test: model writes the lessons file; proposed lessons never reach a prompt)
+- [x] 9.6 Weekly `tune` job without repository code; `learning:` config; metrics shows outcomes

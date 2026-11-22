@@ -127,6 +127,18 @@ export interface FactoryConfig {
   spec: {
     format: 'factory' | 'openspec';
   };
+  learning: {
+    /** Maintainer-approved lessons that implement and the verifier read. Protected from the agent. */
+    lessons: string;
+    /** Characters of the lessons file sent to the model; the rest is dropped with a note. */
+    max_lesson_chars: number;
+    /** Days `tune` looks back over run records. */
+    window_days: number;
+    /** Days after merge a factory PR is watched for a revert or a fix-up before it counts as clean. */
+    outcome_window_days: number;
+    /** Runs a pattern must appear in before `tune` proposes anything for it. */
+    min_occurrences: number;
+  };
   logging: {
     level: 'debug' | 'info' | 'warn' | 'error';
   };

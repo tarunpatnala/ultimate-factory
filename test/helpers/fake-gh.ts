@@ -53,7 +53,18 @@ function main(): number {
     save();
     return (out({ number: n }), 0);
   }
+  if ((m = /^R\/issues\/(\d+)$/.exec(path)) && method === 'PATCH') {
+    const target = state.issues.find((i) => i.number === Number(m![1]));
+    if (fields.body !== undefined) target.body = fields.body;
+    save();
+    return (out({}), 0);
+  }
   if ((m = /^R\/issues\/(\d+)$/.exec(path))) return (out(state.issues.find((i) => i.number === Number(m![1]))), 0);
+  if ((m = /^R\/pulls\/(\d+)$/.exec(path))) {
+    const pr = state.pulls.find((p) => p.number === Number(m![1]));
+    if (!pr) return (process.stderr.write('HTTP 404: Not Found'), 1);
+    return (out(pr), 0);
+  }
   if ((m = /^R\/issues\/(\d+)\/comments$/.exec(path))) {
     const key = m[1]!;
     if (method === 'GET') return (out(state.comments[key] ?? []), 0);

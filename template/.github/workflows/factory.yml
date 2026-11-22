@@ -7,6 +7,8 @@
 #   UFACTORY_PROFILE   optional: "openai" or "portkey" (profile in factory.config.yaml)
 #   UFACTORY_BOT_LOGIN optional: login that posts factory comments when FACTORY_GH_TOKEN is an
 #                      App/PAT (default github-actions[bot])
+#   UFACTORY_TUNE_PR   optional: "true" makes the weekly tune job also open a draft PR with the
+#                      proposed lessons (merging it is the approval). Default: proposals issue only.
 # Repository SECRETS: the env names your factory.config.yaml references, e.g.
 #   OPENAI_API_KEY, PORTKEY_API_KEY
 #   UFACTORY_HANDOFF_KEY  recommended: random string (openssl rand -hex 32). Triage signs each
@@ -32,13 +34,13 @@ on:
     types: [opened, synchronize, ready_for_review]
   schedule:
     - cron: "17 * * * *"   # hourly: triage sweep + one implementation item
-    - cron: "41 6 * * 1"   # weekly: monitor
+    - cron: "41 6 * * 1"   # weekly: monitor and tune
   workflow_dispatch:
     inputs:
       stage:
         description: "Stage to run"
         type: choice
-        options: [triage, implement, monitor, status]
+        options: [triage, implement, monitor, tune, status]
         default: status
       issue:
         description: "Issue number (optional)"
@@ -296,6 +298,41 @@ jobs:
         if: always()
         with: { name: "factory-runs-monitor-${{ github.run_id }}", path: docs/factory/runs/, if-no-files-found: ignore }
 
+  # Learning loop. Runs no repository code (it reads run records, PRs and git history), which is
+  # why it may hold write permissions that the monitor job, which runs your gates, does not.
+  tune:
+    if: >-
+      (github.event_name == 'schedule' && github.event.schedule == '41 6 * * 1') ||
+      (github.event_name == 'workflow_dispatch' && inputs.stage == 'tune')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    concurrency:
+      group: factory-tune
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0, persist-credentials: false }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Install ultimate-factory
+        run: |
+          bash -c "$PIN_CHECK"
+          npm install --global --no-audit --no-fund "$UFACTORY_PACKAGE"
+      - name: Tune
+        env:
+          GH_TOKEN: ${{ secrets.FACTORY_GH_TOKEN || github.token }}
+          TUNE_PR: ${{ vars.UFACTORY_TUNE_PR }}
+        run: |
+          gh auth setup-git
+          ufactory records pull --days 60
+          ufactory tune --apply $([ "$TUNE_PR" = "true" ] && echo --open-pr) >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: "factory-runs-tune-${{ github.run_id }}", path: docs/factory/runs/, if-no-files-found: ignore }
+
   status:
     if: github.event_name == 'workflow_dispatch' && inputs.stage == 'status'
     runs-on: ubuntu-latest
@@ -320,7 +357,7 @@ jobs:
   # git plumbing (no checkout of that branch, no repository code). Exclude the branch from rules
   # that block pushes by github-actions, or give FACTORY_GH_TOKEN access to it.
   records:
-    needs: [triage, implement, verify-new-pr, verify, monitor]
+    needs: [triage, implement, verify-new-pr, verify, monitor, tune]
     if: always() && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10

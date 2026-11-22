@@ -43,6 +43,7 @@ skills. [docs/RUNTIME.md](docs/RUNTIME.md) shows what happens inside a run.
 - [Run it unattended on GitHub Actions](#run-it-unattended-on-github-actions)
 - [Safety model](#safety-model)
 - [The 10-persona review panel](#the-10-persona-review-panel)
+- [The learning loop](#the-learning-loop)
 - [Required and optional tools, skills and plugins](#required-and-optional-tools-skills-and-plugins)
 - [Cost](#cost)
 - [Using it from VS Code and Claude Code](#using-it-from-vs-code-and-claude-code)
@@ -80,6 +81,7 @@ rules checked in code, and opens a pull request with the evidence. It never merg
 | `verify` | Re-runs gates, proof, policy, verifier and critic on the PR, since the PR can change after it is opened |
 | `review` | Ten engineering personas (architect, security, SRE, QA and others) review the diff; one combined verdict, and a block needs `review.block_quorum` personas (default 2) |
 | `monitor` | Weekly: deep gates (audits, mutation testing) on the default branch, stale claims, a full review queue; opens at most 10 deduplicated issues |
+| `tune` | Weekly: records what happened to each factory PR after merge, finds problems that keep recurring, and posts proposals to one issue. It never changes the factory itself; see [The learning loop](#the-learning-loop) |
 
 `implement` does the work, in this order:
 
@@ -287,7 +289,8 @@ Secrets: only `*_env` names and `${ENV}` references. The loader **rejects** lite
 | `records pull\|push [--apply]` | Sync run records with the `factory-records` branch (git plumbing; the checkout is not touched) | git |
 | `monitor [--apply]` | Deep gates on main, stale claims, full queue, advisories → ≤10 deduplicated issues | GitHub |
 | `status` | Control room: review queue first | none |
-| `metrics [--json]` | Attempted, opened and merged rates; stop reasons; proof and verifier mix; cost per merged PR | none |
+| `metrics [--json]` | Attempted, opened and merged rates; stop reasons; proof and verifier mix; outcomes after merge; cost per merged PR | none |
+| `tune [--days N] [--apply] [--open-pr]` | Learning loop: PR outcome records, recurring-problem proposals in one `factory:tune` issue; `--open-pr` puts proposed lessons in a draft PR | files, GitHub |
 | `run [--apply]` | `triage` then `implement` (for cron) | GitHub |
 
 Global: `--config FILE`, `--profile NAME`, `--cwd DIR`, `--apply`, `--verbose`, `--quiet`.
@@ -319,6 +322,9 @@ Every stage that writes to GitHub is a dry run unless you pass `--apply`.
   `UFACTORY_SNYK`, `UFACTORY_WIZ`) and its secret. The file header lists what each needs.
 - A **`records`** job in `factory.yml` that appends every job's run records to the
   `factory-records` branch, so history survives artifact expiry.
+- A weekly **`tune`** job: the learning loop. It runs no repository code, which is why it, and
+  not `monitor`, holds `contents: write`. Set the variable `UFACTORY_TUNE_PR=true` to also get a
+  draft PR with the proposed lessons each week.
 
 Setup:
 
@@ -378,6 +384,44 @@ Residual risks you should know: the gates execute your repository's own test cod
 may have just written, so run unattended implementation on runners without production credentials.
 Prompt-injection resistance is reduced, not eliminated. Turn on `agent.sandbox` for unattended
 runs.
+
+## The learning loop
+
+The factory learns from its own runs, and a human approves every change that comes out of it.
+Nothing in the loop edits the charter, the gates or the prompts in place.
+
+1. **Signals.** Each run record lists what went wrong on the way in a fixed vocabulary
+   (`learn_signals`): the verifier's `must_fix` points, gates that failed at `finish`, AI-slop
+   rules that refused it, and policy refusals.
+2. **Outcomes.** `ufactory tune` checks every factory PR the records know about and writes one
+   outcome record once the result is final: `closed-unmerged`, `reverted` (a revert of its merge
+   commit on the default branch), `fixed-after-merge` (a "fix"/"bug"/"regression" commit to the same
+   files within `learning.outcome_window_days`), `escaped` (a human added `factory:escaped`), or
+   `merged-clean`.
+3. **Proposals.** `tune` groups the signals without a model call, so the same records always give
+   the same result, and posts proposals with stable ids to one `factory:tune` issue, most urgent
+   first:
+
+   | Kind | Raised when | What a human does |
+   |---|---|---|
+   | `tighten` | A merged PR was reverted, fixed afterwards or labelled escaped | Find the gate that missed it and tighten it |
+   | `lesson` | The same verifier objection, AI-slop rule or failed proof recurs in `learning.min_occurrences` runs (default 3) | Accept the lesson text, or reword it |
+   | `lesson-not-working`, `gate` | An active lesson keeps being raised or broken | Reword it, or replace it with a lint rule, test or gate |
+   | `check` | The same gate fails at `finish` repeatedly | Fix the cause or the flaky gate; never loosen it to pass |
+   | `charter` | Runs keep hitting the same scope refusal | Narrow triage (`AUTOMATABLE`), not the charter |
+   | `loosen-candidate` | 10+ merged-clean PRs and nothing reverted or fixed in the window | Decide whether a limit can widen, and record it in `DECISIONS.md` |
+
+4. **Lessons.** Accepted lessons live under `## Active` in `docs/factory/LESSONS.md`, which the
+   implementation agent and the verifier read on every run (capped at
+   `learning.max_lesson_chars`). The file is a protected path: the agent cannot write it, and a PR
+   that changes it needs a maintainer's approval under `factory-policy`. `tune --apply --open-pr`
+   writes the proposed lessons into a draft PR; merging it is the approval, and deleting a lesson
+   from the PR rejects it. The verifier cites a lesson's id when it rejects a diff for breaking it,
+   which is how `tune` tells whether a lesson works.
+
+Text from run records (a verifier's words, which can quote an issue) is only ever quoted as
+evidence and never executed or applied. A lesson cannot relax a rule: rules are enforced in code,
+and the prompts say the rule wins. Configure it under `learning:` in `factory.config.yaml`.
 
 ## The 10-persona review panel
 
@@ -535,7 +579,9 @@ paths, diff, engine), `src/agent` (sandboxed workspace, tools, loop), `src/gates
 - Without `agent.sandbox`, gates run your repository's code as your OS user with network access.
 - The slop check is pattern-based. It finds the common tells, not every redundant comment; the
   human read and `/simplify` cover the rest.
-- Not yet published to npm: install from source, or set `UFACTORY_PACKAGE` to a git URL + tag.
+- The learning loop counts patterns; it does not judge them. Fix-up detection reads commit
+  subjects, so a fix whose message lacks "fix", "bug", "hotfix" or "regression" is missed: label
+  the PR `factory:escaped`. It needs the default branch's full history (`fetch-depth: 0`).
 - When a provider omits `usage`, tokens are estimated (characters ÷ 4) and flagged.
 - Spec gates are interactive by design; the factory never approves its own spec.
 

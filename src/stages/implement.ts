@@ -19,6 +19,7 @@ import { formatFindings, scanDiff, type SlopFinding } from '../policy/slop.js';
 import { BudgetExceededError, LlmError } from '../util/errors.js';
 import { killAllChildren } from '../util/exec.js';
 import { removeAllContainers, runRepoCode } from '../util/sandbox.js';
+import { lessonsBlock, readLessons } from '../learning/lessons.js';
 import { runCritic, runVerifier, verifierIndependent, type CriticVerdict, type VerifierVerdict } from './judges.js';
 
 export interface ImplementOptions {
@@ -212,6 +213,7 @@ export async function implementCommand(ctx: RunContext, o: ImplementOptions): Pr
             const p = reqS(args.path, 'path');
             const rel = ws.resolve(p).rel;
             if (charter.testsAreLoadBearing && ctx.policy.paths.classify(rel).test && (await existedAtBase(rel))) {
+              ctx.record.signal('refusal', 'test-modified');
               return { kind: 'refused', error: 'existing test files may not be modified or deleted in an unattended run (TESTS_ARE_LOAD_BEARING). Add a new test file instead.' };
             }
             const result =
@@ -225,11 +227,13 @@ export async function implementCommand(ctx: RunContext, o: ImplementOptions): Pr
             if (hard) {
               // Revert and refuse: the agent can try a smaller change (edit_file) or give_up.
               ws.revert(rel);
+              ctx.record.signal('refusal', hard.code);
               return { kind: 'refused', error: `${hard.code}: ${hard.detail}. The change to ${rel} was reverted; make a smaller change with edit_file, or call give_up.` };
             }
             const other = pr.violations[0];
             if (other) {
               ws.revert(rel);
+              ctx.record.signal('refusal', other.code);
               return { kind: 'refused', error: `${other.code}: ${other.detail}` };
             }
             return { kind: 'result', payload: { ...result, diff_lines: pr.changedLines, diff_files: pr.changedFiles, limits: { lines: charter.maxChangedLines, files: charter.maxChangedFiles } } };
@@ -271,6 +275,7 @@ export async function implementCommand(ctx: RunContext, o: ImplementOptions): Pr
             if (cfg.agent.slop !== 'off') {
               slop = scanDiff(await diffText(ctx.root, baseSha));
               slopRefusals += slop.length && cfg.agent.slop === 'block' ? 1 : 0;
+              for (const f of slop) ctx.record.signal('slop', f.rule);
               if (slop.length && cfg.agent.slop === 'block' && slopRefusals <= 2) {
                 return { kind: 'refused', error: `finish rejected: AI-slop in added lines. Rewrite or delete these comments and lines, then call finish again:\n${formatFindings(slop)}` };
               }
@@ -282,6 +287,7 @@ export async function implementCommand(ctx: RunContext, o: ImplementOptions): Pr
             const tamper = await tamperCheck();
             if (tamper) return { kind: 'stop', reason: tamper.reason, detail: tamper.detail };
             if (g.status !== 'GREEN') {
+              for (const gate of failingGates(g.line)) ctx.record.signal('gate', gate);
               if (finishAttempts >= 2) return { kind: 'stop', reason: 'gates-red-twice', detail: g.line };
               return { kind: 'refused', error: `finish rejected: gates are not GREEN.\n${g.line}\n${g.output.slice(-6000)}\nFix the failures, then call finish again (last attempt).` };
             }
@@ -290,7 +296,11 @@ export async function implementCommand(ctx: RunContext, o: ImplementOptions): Pr
         }
         return { kind: 'refused', error: `unknown tool ${name}` };
       } catch (e) {
-        if (e instanceof WorkspaceError) return { kind: 'refused', error: e.message };
+        if (e instanceof WorkspaceError) {
+          const why = /^(?:write|delete) refused: ([^(;]+)/.exec(e.message)?.[1];
+          if (why) ctx.record.signal('refusal', why.trim());
+          return { kind: 'refused', error: e.message };
+        }
         if (e instanceof BudgetExceededError) throw e;
         return { kind: 'refused', error: (e as Error).message };
       }
@@ -337,6 +347,7 @@ export async function implementCommand(ctx: RunContext, o: ImplementOptions): Pr
       verifier = await runVerifier(ctx, input);
       ctx.record.set('verifier', verifier.verdict);
       ctx.record.set('verifier_independent', verifierIndependent(ctx));
+      if (verifier.verdict === 'rejected') for (const m of verifier.must_fix) ctx.record.signal('verifier', m);
       if (verifier.verdict === 'rejected') {
         if (round === 2) throw new Stop('verifier-rejected', `verifier rejected twice: ${verifier.must_fix.join('; ')}`, 'factory:needs-info', 1, 'rejected');
         ctx.log.warn(`verifier rejected (round 1): ${verifier.must_fix.join('; ')}`);
@@ -443,6 +454,11 @@ export async function implementCommand(ctx: RunContext, o: ImplementOptions): Pr
   }
 }
 
+function failingGates(line: string): string[] {
+  const f = /failing=(\S+)/.exec(line)?.[1];
+  return f && f !== 'none' ? f.split(',') : [];
+}
+
 /** Changed files outside the triaged scope become a reason for a human read. */
 function outOfScope(files: Array<{ path: string }> | undefined, expected: string[]): string[] {
   if (!files || !expected.length) return [];
@@ -506,6 +522,7 @@ function buildSystemPrompt(ctx: RunContext, item: WorkItem, level: GateLevel): s
   const c = ctx.charter;
   const contractPath = join(ctx.root, ctx.cfg.factory.contract);
   const contract = existsSync(contractPath) ? readFileSync(contractPath, 'utf8').slice(0, 12_000) : '';
+  const lessons = readLessons(ctx.root, ctx.cfg.learning);
   return [
     'You are the implementation agent of a software factory. You implement exactly ONE queue item with the smallest diff that makes done_when true.',
     'Rules (enforced by the runtime; violating them ends the run):',
@@ -519,6 +536,7 @@ function buildSystemPrompt(ctx: RunContext, item: WorkItem, level: GateLevel): s
     '- Prefer edit_file for changes to existing files. Call finish with the list of NEW test files that prove the change. If the item cannot be done within these rules, call give_up with the reason.',
     ctx.fence.instruction,
     contract ? `Factory contract (reference):\n${contract}` : '',
+    lessons.text ? lessonsBlock('implement', lessons.text) : '',
   ]
     .filter(Boolean)
     .join('\n');

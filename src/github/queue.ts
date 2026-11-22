@@ -25,6 +25,8 @@ export const LABEL_SPECS: Array<{ name: string; color: string; description: stri
   { name: 'factory:monitor', color: 'bfdadc', description: 'Filed by the factory monitor' },
   { name: 'factory:verified', color: '0e8a16', description: 'Factory verification accepted this PR' },
   { name: 'factory:rejected', color: 'b60205', description: 'Factory verification rejected this PR' },
+  { name: 'factory:tune', color: 'c2e0c6', description: 'Tuning proposals from ufactory tune; a human decides' },
+  { name: 'factory:escaped', color: 'b60205', description: 'A merged factory PR that later needed a fix (set by a human)' },
 ];
 
 export function stateOf(issue: Pick<Issue, 'labels'>): StateLabel | undefined {

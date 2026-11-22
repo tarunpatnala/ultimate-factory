@@ -67,6 +67,8 @@ export async function verifyCommand(ctx: RunContext, o: { pr: number; testPaths?
     const mustFix = [...verifier.must_fix];
     if (claimedStatus && claimedStatus !== gates.status) mustFix.unshift(`PR body claims gates ${claimedStatus} but re-run is ${gates.status}`);
     const verdict = claimedStatus && claimedStatus !== gates.status ? 'rejected' : verifier.verdict;
+    if (verdict === 'rejected') for (const m of mustFix) ctx.record.signal('verifier', m);
+    if (gates.status === 'RED') for (const gate of /failing=(\S+)/.exec(gates.line)?.[1]?.split(',').filter((x) => x !== 'none') ?? []) ctx.record.signal('gate', gate);
     const critic = ctx.policy.criticRequired(policyResult) ? await runCritic(ctx, input) : undefined;
     const humanReasons = ctx.policy.draftReasons(policyResult, proof.status !== 'PROVEN' ? [`proof ${proof.status}`] : []);
 

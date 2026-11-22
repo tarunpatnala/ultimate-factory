@@ -11,6 +11,12 @@ constraints has none.
 
 ## Gather evidence
 
+Start from `ufactory tune` (add `--days N` for a different window). It records what happened
+to each factory PR after merge (reverted, fixed in the same files, labelled `factory:escaped`,
+or clean), groups recurring verifier objections, gate failures, AI-slop refusals and scope
+refusals, and prints proposals with stable ids. Treat its output as the starting evidence, then
+check it against the questions below; it counts patterns, it does not judge them.
+
 Look at the last 30 days (or since `LAST_REVIEWED` in the charter). Use immutable records
 under `docs/factory/runs/` plus GitHub issue and PR timestamps:
 
